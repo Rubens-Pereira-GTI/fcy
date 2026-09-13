@@ -48,7 +48,6 @@ local logLimiterActive = false
 local logGentleStopActive = false
 
 -- Estados das teclas para evitar múltiplos acionamentos em um único toque
-local lastF10Down = false
 local lastF9Down = false
 local badgeWasDragged = false
 
@@ -125,12 +124,7 @@ function script.drawUI()
         return
     end
 
-    if not showUI then
-        ac.debug("FCY_UI_Status", "Oculto (F8 para abrir)")
-        return
-    end
-
-    ac.debug("FCY_UI_Status", "Visivel")
+    ac.debug("FCY_UI_Status", storedPos.minimized and "Minimizado" or "Expandido")
 
     local winPos = vec2(storedPos.posX, storedPos.posY)
 
@@ -213,8 +207,9 @@ function script.drawUI()
     end
 
     -- Área de arrasto do cabeçalho (cobre o cabeçalho exceto os botões de ação à direita)
+    -- Área de arrasto do cabeçalho (cobre o cabeçalho exceto o botão de minimizar no canto)
     ui.setCursor(vec2(0, 0))
-    ui.invisibleButton("##dragHeader", vec2(winSize.x - 72, headerHeight))
+    ui.invisibleButton("##dragHeader", vec2(winSize.x - 38, headerHeight))
 
     if ui.itemActive() then
         local delta = ui.mouseDelta()
@@ -243,12 +238,9 @@ function script.drawUI()
     ui.textColored("Direção FCY", rgbm(1, 1, 1, 1))
     ui.popFont()
 
-    -- Botões de Minimizar (-) e Fechar (X)
-    -- Perfeitamente contidos dentro do cabeçalho (Y=4, Altura=24 cabe com folga dentro de headerHeight=32)
+    -- Botão Minimizar (-) no canto superior direito
     local btnSize = vec2(26, 24)
-
-    -- Botão Minimizar (-)
-    ui.setCursor(vec2(winSize.x - 62, 4))
+    ui.setCursor(vec2(winSize.x - 32, 4))
     ui.pushStyleColor(ui.StyleColor.Button, rgbm(0, 0, 0, 0))
     ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.32, 0.35, 0.44, 0.85))
     ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.20, 0.22, 0.28, 0.95))
@@ -257,21 +249,9 @@ function script.drawUI()
         storedPos.minimized = true
     end
     if ui.itemHovered() then
-        ui.setTooltip("Minimizar para badge compacta")
+        ui.setTooltip("Minimizar painel (fica em badge compacta)")
     end
-
-    -- Botão Fechar (X) com destaque vermelho ao passar o mouse
-    ui.setCursor(vec2(winSize.x - 32, 4))
-    ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.85, 0.22, 0.22, 0.95))
-    ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.65, 0.15, 0.15, 1.0))
-    if ui.button("X", btnSize) then
-        showUI = false
-        ac.setMessage("PAINEL FCY", "Painel fechado (pressione F10 para reabrir)", nil, 2)
-    end
-    if ui.itemHovered() then
-        ui.setTooltip("Fechar painel (pressione F10 para reabrir)")
-    end
-    ui.popStyleColor(6)
+    ui.popStyleColor(4)
 
     -- ÁREA DO CORPO (abaixo do cabeçalho)
     -- Slider com fundo e pegador de alto contraste
@@ -335,15 +315,6 @@ function script.update(dt)
 
     -- Controles de administrador via teclado (apenas para quem é admin)
     if isLocalAdmin() then
-        -- Alternar visibilidade do painel via F10 (Totalmente Invisível <-> Visível)
-        local f10 = ui.keyboardButtonDown(ui.Key.F10)
-        if f10 and not lastF10Down then
-            showUI = not showUI
-            ac.log(">>> [FCY KEY] Tecla F10 pressionada. Painel showUI=" .. tostring(showUI))
-            ac.setMessage("PAINEL FCY", showUI and "Painel ativado (Visível)" or "Painel oculto (F10 para reabrir)", nil, 2)
-        end
-        lastF10Down = f10
-
         -- Atalho de teclado rápido via F9 (acionar / liberar sem precisar do mouse)
         local f9 = ui.keyboardButtonDown(ui.Key.F9)
         if f9 and not lastF9Down then
