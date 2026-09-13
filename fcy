@@ -82,19 +82,29 @@ function script.drawUI()
     ac.debug("FCY_UI_Status", "Visivel")
 
     local winPos = vec2(40, 120)
-    local winSize = vec2(260, 155)
+    local winSize = vec2(260, 160)
 
-    -- Fundo escuro solido
+    -- Fundo escuro solido com borda arredondada
     pcall(function()
-        ui.drawRectFilled(winPos, winPos + winSize, rgbm(0.08, 0.08, 0.08, 0.92), 6)
+        ui.drawRectFilled(winPos, winPos + winSize, rgbm(0.08, 0.08, 0.08, 0.94), 6)
         ui.drawRect(winPos, winPos + winSize, rgbm(0.35, 0.35, 0.35, 1.0), 6)
     end)
 
-    ui.beginTransparentWindow("FCY_Admin", winPos + vec2(10, 10), winSize - vec2(20, 20))
+    -- IMPORTANTE: O 5º parametro de ui.beginTransparentWindow é 'inputs'.
+    -- Por padrao ele é 'false' (janela nao-interativa / click-through).
+    -- Passando 'true', os botoes, sliders e cliques do mouse passam a funcionar!
+    ui.beginTransparentWindow("FCY_Admin", winPos, winSize, false, true)
+
+    -- Garante foco do mouse sobre a janela para nao interferir na camera/direcao do AC
+    if ui.windowHovered() then
+        ui.captureMouse(true)
+        ui.setMouseCursor(ui.MouseCursor.Arrow)
+    end
 
     ui.text("Direção de Prova - FCY")
     ui.separator()
 
+    ui.setNextItemWidth(-1)
     tempoSlider = ui.slider("##time", tempoSlider, 0, 10, "Contagem: %.0f s")
 
     local btnText = FCY and "LIBERAR (GREEN)" or "ACIONAR (DEPLOY)"
@@ -129,10 +139,19 @@ function script.update(dt)
     ac.debug("FCY_update_Calls", updateCalls)
     ac.debug("FCY_Velocidade", string.format("%.1f km/h", ac.getCar(0).speedKmh))
 
-    -- Alternar visibilidade via F8
+    -- Alternar visibilidade do painel via F8
     if ui.keyboardButtonDown(ui.Key.F8) then
         showUI = not showUI
         ac.log(">>> [FCY KEY] Tecla F8 pressionada. Painel showUI=" .. tostring(showUI))
+    end
+
+    -- Atalho de teclado rápido via F9 (acionar / liberar sem precisar do mouse)
+    if ui.keyboardButtonDown(ui.Key.F9) then
+        local novo = not FCY
+        local t = novo and math.floor(tempoSlider) or 0
+        ac.log(string.format(">>> [FCY KEY F9] Tecla F9 pressionada! Mudando para: %s (tempo: %d s)", tostring(novo), t))
+        aplicarEstadoFCY(novo, t, "TECLA_F9")
+        comms({ fcy = novo, timer = t, req = false })
     end
 
     -- Contagem regressiva
