@@ -1,155 +1,24 @@
-local sim = ac.getSim()
-local fcyToggle = ac.ControlButton("FCYTOGGLE")
-local FCY = false
-local force = false
-ac.storageSetPath('woeFCYuponye')
-local stor = ac.storage{
-    t = 5
-}
+-- REGISTRO DE JANELA DO CSP
+local windowVisible = true
 
--- Configurações fixas para o servidor nativo
-local autoslow = true
-local dtLaps = 3
-local adminOnly = true  -- Apenas quem estiver como admin aciona
-local altLimiter = false
-
-ac.debug("!version", "woeFCYuponye v1.5 - Kunos/ACSM Edition")
-
-ac.onSessionStart(function (sessionIndex, restarted)
-    FCY = false
-    force = false
-end)
-
--- 1. COMUNICAÇÃO USANDO NAMESPACE COMPATÍVEL COM SERVIDOR KUNOS
-local comms
-comms = ac.OnlineEvent({
-    ac.StructItem.key("FCY_KUNOS"),
-    fcy = ac.StructItem.boolean(),
-    time = ac.StructItem.uint8(),
-    req = ac.StructItem.boolean()
-}, function(sender, message)
-    local timer = message.time
-
-    if message.req then
-        -- Se outro piloto acabou de entrar, envia o estado atual do FCY para ele
-        if FCY then
-            comms({ fcy = FCY, time = 0, req = false })
-        end
-    else
-        if FCY ~= message.fcy then
-            FCY = message.fcy
-
-            setInterval(function()
-                if timer > 0 then
-                    if FCY then
-                        ac.setMessage("FCY", "FCY DEPLOYED IN " .. timer, nil, 5)
-                    else
-                        ac.setMessage("FCY", "FCY LIFTED IN " .. timer, nil, 5)
-                    end
-                    timer = timer - 1
-                else
-                    if FCY then
-                        ac.setMessage("FCY", "FCY DEPLOYED", nil, 5)
-                    else
-                        ac.setMessage("FCY", "FCY LIFTED", nil, 5)
-                    end
-
-                    force = FCY
-                    return clearInterval
-                end
-            end, 1, "FCY_TIMER")
-        end
-    end
-end, ac.SharedNamespace.Track) -- <-- MUDANÇA CRUCIAL: Funciona sem AssettoServer
-
-function castStatus(t)
-    math.randomseed(sim.currentSessionTime)
-    if not comms(t) then
-        setInterval(function ()
-            if comms(t) then
-                return clearInterval
-            end
-        end, math.random())
-    end
-end
-
--- Atalho de volante / botão físico
-fcyToggle:onPressed(function ()
-    if (adminOnly and sim.isAdmin) or not adminOnly then
+local function drawFCYPanel()
+    stor.t = ui.slider("Contagem", stor.t, 0, 20, '%.0f seg')
+    
+    if ui.button(FCY and "LIBERAR PISTA (LIFT)" or "ACIONAR FCY (DEPLOY)", vec2(-1, 35)) then
         castStatus({ fcy = (not FCY), time = stor.t, req = false })
     end
-end)
-
--- 2. INTERFACE RENDERIZADA DIRETO NA TELA (Sem depender do menu que sumia)
-function script.drawUI()
-    -- Mostra o painel na tela apenas para administradores
-    if sim.isAdmin or not adminOnly then
-        ui.begin("Controle FCY (Admin)", vec2(230, 110))
-        
-        stor.t = ui.slider("Contagem", stor.t, 0, 20, '%.0f seg')
-        
-        if ui.button(FCY and "LIBERAR PISTA (LIFT)" or "ACIONAR FCY (DEPLOY)", vec2(-1, 35)) then
-            castStatus({ fcy = (not FCY), time = stor.t, req = false })
-        end
-        
-        fcyToggle:control(vec2(100, 100))
-        ui.endTransparentWindow()
-    end
-end
-
--- 3. FÍSICA E LIMITAÇÃO DE VELOCIDADE
-local wasstop = false
-local wasforce = false
-local wasFCY = false
-
-function script.update(dt)
-    local stop = false
-
-    if autoslow then       
-        if (car.speedKmh > 85) and force then
-            if physics.getCarInputControls().brake < 0.1 then
-                stop = true
-            end
-        elseif car.speedKmh > 79 and force then
-            if altLimiter then
-                physics.setEngineRPM(0, car.rpm - (100 * (math.max(car.speedKmh - 79, 0))))
-            else
-                if not car.manualPitsSpeedLimiterEnabled then
-                    physics.forceUserThrottleFor(dt, 0)
-                end
-            end
-        end
-    end
-
-    if dtLaps > 0 then
-        if car.speedKmh > 80.5 and force then
-            physics.setCarPenalty(ac.PenaltyType.MandatoryPits, dtLaps)
-        end
-    end
-
-    if FCY then
-        if not wasFCY then
-            physics.overrideRacingFlag(ac.FlagType.Caution)  
-        end
-        ac.setTurningLights(ac.TurningLights.Hazards)
-    end
-
-    if not force and wasforce then
-        ac.setTurningLights(ac.TurningLights.None)
-        physics.overrideRacingFlag(ac.FlagType.None)  
-    end
-
-    if stop and not wasstop then
-        physics.setGentleStop(0, true)
-    end
-    if not stop and wasstop then
-        physics.setGentleStop(0, false)
-    end
     
-    wasstop = stop
-    wasforce = force
-    wasFCY = FCY
+    ui.text(string.format("Status: %s | Admin: %s", FCY and "ATIVO" or "OFF", tostring(sim.isAdmin)))
+    fcyToggle:control(vec2(100, 100))
 end
 
--- Solicita o estado atual ao entrar na pista
-castStatus({ req = true })
+-- Registra a janela no ecossistema do CSP
+ui.registerWindow("Controle FCY", vec2(250, 130), drawFCYPanel)
+
+-- Atalho: Tecla F8 alterna a exibição da janela na tela
+function script.update(dt)
+    if ui.keyboardButtonDown(ui.KeyIndex.F8) then
+        windowVisible = not windowVisible
+    end
+
+    -- [Mantenha aqui todo o restante da sua função update() de física, luzes e corte de motor...]
