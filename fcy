@@ -5,21 +5,38 @@
 local ADMIN_STEAM_ID = "76561198091832668"
 
 local FCY = false
+local showUI = true
 local countdownTimer = 0
 local secondTracker = 0
 local tempoSlider = 5
 
--- Validação de Admin sem falhar se o carro ainda não instanciou
-local function checkIsDirector()
-    local carObj = ac.getCar(0)
-    if carObj and carObj.driverSteamID and carObj.driverSteamID ~= "" then
-        return tostring(carObj.driverSteamID) == ADMIN_STEAM_ID
-    end
-    -- Se estiver em sessão local/single-player ou carregando, libera por padrão
-    return true
+-- Leitura segura de structs C (evita o crash de membro inexistente)
+local function safeRead(cdataObj, key)
+    if not cdataObj then return nil end
+    local ok, value = pcall(function() return cdataObj[key] end)
+    return ok and value or nil
 end
 
--- Canal de rede do CSP
+-- Valida se o usuário atual é o comissário/diretor
+local function isDirector()
+    local car = ac.getCar(0)
+    local sim = ac.getSim()
+
+    -- 1. Se estiver em Single Player / Prática Offline, libera sempre
+    if sim and not sim.isOnlineRace then
+        return true
+    end
+
+    -- 2. Tenta ler o GUID/SteamID na struct do carro ou simulação
+    local playerGuid = tostring(safeRead(car, "guid") or safeRead(sim, "userGuid") or "")
+    if playerGuid == ADMIN_STEAM_ID then
+        return true
+    end
+
+    return false
+end
+
+-- Comunicação de rede CSP
 local comms
 comms = ac.OnlineEvent({
     ac.StructItem.key("CSP_FCY_NET"),
@@ -28,7 +45,7 @@ comms = ac.OnlineEvent({
     req = ac.StructItem.boolean()
 }, function(sender, message)
     if message.req then
-        if FCY and checkIsDirector() then
+        if FCY and isDirector() then
             comms({ fcy = true, timer = 0, req = false })
         end
         return
@@ -39,25 +56,25 @@ comms = ac.OnlineEvent({
         countdownTimer = message.timer
         if countdownTimer == 0 then
             ac.playUISound(ac.UISound.FlagCaution)
-            ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
+            ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
         else
             ac.playUISound(ac.UISound.Notification)
-            ac.setMessage("DIRECAO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+            ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
         end
     else
         countdownTimer = 0
         physics.overrideRacingFlag(ac.FlagType.None)
         ac.setTurningLights(ac.TurningLights.None)
         ac.playUISound(ac.UISound.FlagGreen)
-        ac.setMessage("DIRECAO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
+        ac.setMessage("DIREÇÃO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
     end
 end, ac.SharedNamespace.Track)
 
--- Renderiza a janela apenas na tela do Diretor
+-- Interface gráfica desenhada diretamente na tela
 function script.drawUI()
-    if not checkIsDirector() then return end
+    if not isDirector() or not showUI then return end
 
-    ui.beginTransparentWindow("FCY_Admin", vec2(40, 120), vec2(250, 145))
+    ui.beginTransparentWindow("FCY_Admin", vec2(40, 120), vec2(250, 150))
     ui.text("Direção de Prova - FCY")
     ui.separator()
 
@@ -67,28 +84,28 @@ function script.drawUI()
     if ui.button(btnText, vec2(-1, 35)) then
         local novo = not FCY
         local t = novo and math.floor(tempoSlider) or 0
-        
+
         -- Aplica localmente na máquina do diretor de imediato
         FCY = novo
         if novo then
             countdownTimer = t
             if t == 0 then
                 ac.playUISound(ac.UISound.FlagCaution)
-                ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
+                ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         else
             countdownTimer = 0
             physics.overrideRacingFlag(ac.FlagType.None)
             ac.setTurningLights(ac.TurningLights.None)
             ac.playUISound(ac.UISound.FlagGreen)
-            ac.setMessage("DIRECAO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
+            ac.setMessage("DIREÇÃO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
         end
 
-        -- Sincroniza com todo o restante do grid
+        -- Transmite a ordem pela rede para todos os outros pilotos
         comms({ fcy = novo, timer = t, req = false })
     end
 
-    ui.dummy(vec2(0, 4))
+    ui.dummy(vec2(0, 3))
     if FCY then
         ui.textColored("STATUS: FCY ATIVO (MAX 80 KM/H)", rgbm(1, 0.8, 0, 1))
     elseif countdownTimer > 0 then
@@ -101,7 +118,12 @@ function script.drawUI()
 end
 
 function script.update(dt)
-    -- Contagem regressiva
+    -- Alterna exibição do painel apertando F8 no teclado
+    if ui.keyboardButtonDown(ui.Key.F8) then
+        showUI = not showUI
+    end
+
+    -- Gerenciador da contagem regressiva
     if countdownTimer > 0 then
         secondTracker = secondTracker + dt
         if secondTracker >= 1.0 then
@@ -109,16 +131,16 @@ function script.update(dt)
             countdownTimer = countdownTimer - 1
             if countdownTimer > 0 then
                 ac.playUISound(ac.UISound.Notification)
-                ac.setMessage("DIRECAO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+                ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
             else
                 FCY = true
                 ac.playUISound(ac.UISound.FlagCaution)
-                ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
+                ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         end
     end
 
-    -- Regras físicas e sinalização ativas em todos os carros
+    -- Regras físicas ativas durante o FCY
     if FCY then
         physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
@@ -137,5 +159,5 @@ function script.update(dt)
     end
 end
 
--- Solicita estado atual se entrar com a corrida em andamento
+-- Sincronização inicial
 comms({ req = true })
