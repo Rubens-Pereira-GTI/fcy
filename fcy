@@ -1,16 +1,25 @@
 -- ========================================================
--- FCY INJETADO VIA CSP (Track Script / Server Injection)
+-- FCY INJETADO VIA CSP (Direção de Prova)
 -- ========================================================
 
-local ADMIN_STEAM_ID = "76561198091832668 " -- Insira o seu SteamID64 aqui
+local ADMIN_STEAM_ID = "76561198091832668"
 
-local isDirector = (ac.getDriverSteamID(0) == ADMIN_STEAM_ID)
 local FCY = false
 local countdownTimer = 0
 local secondTracker = 0
 local tempoSlider = 5
 
--- Canal de rede sincronizado no namespace da pista
+-- Validação de Admin sem falhar se o carro ainda não instanciou
+local function checkIsDirector()
+    local carObj = ac.getCar(0)
+    if carObj and carObj.driverSteamID and carObj.driverSteamID ~= "" then
+        return tostring(carObj.driverSteamID) == ADMIN_STEAM_ID
+    end
+    -- Se estiver em sessão local/single-player ou carregando, libera por padrão
+    return true
+end
+
+-- Canal de rede do CSP
 local comms
 comms = ac.OnlineEvent({
     ac.StructItem.key("CSP_FCY_NET"),
@@ -19,7 +28,7 @@ comms = ac.OnlineEvent({
     req = ac.StructItem.boolean()
 }, function(sender, message)
     if message.req then
-        if FCY and isDirector then
+        if FCY and checkIsDirector() then
             comms({ fcy = true, timer = 0, req = false })
         end
         return
@@ -44,12 +53,12 @@ comms = ac.OnlineEvent({
     end
 end, ac.SharedNamespace.Track)
 
--- Interface: renderizada EXCLUSIVAMENTE na tela do diretor de prova
+-- Renderiza a janela apenas na tela do Diretor
 function script.drawUI()
-    if not isDirector then return end
+    if not checkIsDirector() then return end
 
-    ui.beginTransparentWindow("FCY_Admin", vec2(20, 100), vec2(220, 130))
-    ui.text("Painel Direcao (FCY)")
+    ui.beginTransparentWindow("FCY_Admin", vec2(40, 120), vec2(250, 145))
+    ui.text("Direção de Prova - FCY")
     ui.separator()
 
     tempoSlider = ui.slider("##time", tempoSlider, 0, 10, "Contagem: %.0f s")
@@ -58,13 +67,41 @@ function script.drawUI()
     if ui.button(btnText, vec2(-1, 35)) then
         local novo = not FCY
         local t = novo and math.floor(tempoSlider) or 0
+        
+        -- Aplica localmente na máquina do diretor de imediato
+        FCY = novo
+        if novo then
+            countdownTimer = t
+            if t == 0 then
+                ac.playUISound(ac.UISound.FlagCaution)
+                ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
+            end
+        else
+            countdownTimer = 0
+            physics.overrideRacingFlag(ac.FlagType.None)
+            ac.setTurningLights(ac.TurningLights.None)
+            ac.playUISound(ac.UISound.FlagGreen)
+            ac.setMessage("DIRECAO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
+        end
+
+        -- Sincroniza com todo o restante do grid
         comms({ fcy = novo, timer = t, req = false })
     end
+
+    ui.dummy(vec2(0, 4))
+    if FCY then
+        ui.textColored("STATUS: FCY ATIVO (MAX 80 KM/H)", rgbm(1, 0.8, 0, 1))
+    elseif countdownTimer > 0 then
+        ui.textColored(string.format("STATUS: FCY EM %d s...", countdownTimer), rgbm(1, 0.5, 0, 1))
+    else
+        ui.textColored("STATUS: BANDEIRA VERDE", rgbm(0, 1, 0, 1))
+    end
+
     ui.endTransparentWindow()
 end
 
 function script.update(dt)
-    -- 1. Contagem regressiva
+    -- Contagem regressiva
     if countdownTimer > 0 then
         secondTracker = secondTracker + dt
         if secondTracker >= 1.0 then
@@ -74,13 +111,14 @@ function script.update(dt)
                 ac.playUISound(ac.UISound.Notification)
                 ac.setMessage("DIRECAO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
             else
+                FCY = true
                 ac.playUISound(ac.UISound.FlagCaution)
                 ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         end
     end
 
-    -- 2. Regras fisicas aplicadas em todos os clientes
+    -- Regras físicas e sinalização ativas em todos os carros
     if FCY then
         physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
@@ -99,5 +137,5 @@ function script.update(dt)
     end
 end
 
--- Sincroniza ao conectar
+-- Solicita estado atual se entrar com a corrida em andamento
 comms({ req = true })
