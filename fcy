@@ -66,11 +66,9 @@ local function aplicarEstadoFCY(ativo, tempo, origem)
         if countdownTimer == 0 then
             FCY = true
             ac.log(">>> [FCY STATE] FCY IMEDIATO ATIVADO (Bandeira Amarela)")
-            ac.playUISound(ac.UISound.FlagCaution)
             ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
         else
             ac.log(string.format(">>> [FCY STATE] CONTAGEM INICIADA (%d segundos)", countdownTimer))
-            ac.playUISound(ac.UISound.Notification)
             ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
         end
     else
@@ -78,7 +76,6 @@ local function aplicarEstadoFCY(ativo, tempo, origem)
         countdownTimer = 0
         physics.overrideRacingFlag(ac.FlagType.None)
         ac.setTurningLights(ac.TurningLights.None)
-        ac.playUISound(ac.UISound.FlagGreen)
         ac.setMessage("DIREÇÃO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
         ac.log(">>> [FCY STATE] PISTA LIBERADA (Bandeira Verde e luzes desligadas)")
     end
@@ -368,12 +365,10 @@ function script.update(dt)
             ac.log(string.format(">>> [FCY TIMER TICK] Restam %d segundos", countdownTimer))
 
             if countdownTimer > 0 then
-                ac.playUISound(ac.UISound.Notification)
                 ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
             else
                 FCY = true
                 ac.log(">>> [FCY TIMER] Contagem finalizada! Ativando FCY pleno e limite de 80 km/h")
-                ac.playUISound(ac.UISound.FlagCaution)
                 ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         end
