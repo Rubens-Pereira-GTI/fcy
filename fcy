@@ -10,7 +10,7 @@ ac.log(">>> [FCY INIT] SCRIPT_1 carregado com sucesso <<<")
 -- Adicione aqui o nome exato dos pilotos que têm permissão de Direção de Prova.
 -- Deve ser o mesmo nome configurado no Content Manager / Assetto Corsa.
 local admins = {
-    ["Rubens .P"] = true,
+    ["Rubensc"] = true,
     ["Diretor de Prova"] = true,
     ["Admin"] = true,
     -- Adicione outros administradores abaixo:
