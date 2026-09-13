@@ -84,16 +84,12 @@ function script.drawUI()
     local winPos = vec2(40, 120)
     local winSize = vec2(260, 160)
 
-    -- Fundo escuro solido com borda arredondada
-    pcall(function()
-        ui.drawRectFilled(winPos, winPos + winSize, rgbm(0.08, 0.08, 0.08, 0.94), 6)
-        ui.drawRect(winPos, winPos + winSize, rgbm(0.35, 0.35, 0.35, 1.0), 6)
-    end)
-
-    -- IMPORTANTE: O 5º parametro de ui.beginTransparentWindow é 'inputs'.
-    -- Por padrao ele é 'false' (janela nao-interativa / click-through).
-    -- Passando 'true', os botoes, sliders e cliques do mouse passam a funcionar!
+    -- Inicia a janela com inputs habilitados (true)
     ui.beginTransparentWindow("FCY_Admin", winPos, winSize, false, true)
+
+    -- Fundo desenhado DENTRO da janela (ordem correta: desenha antes dos controles, ficando atrás deles)
+    ui.drawRectFilled(vec2(0, 0), winSize, rgbm(0.10, 0.10, 0.13, 0.92), 8)
+    ui.drawRect(vec2(0, 0), winSize, rgbm(0.40, 0.40, 0.45, 1.0), 8)
 
     -- Garante foco do mouse sobre a janela para nao interferir na camera/direcao do AC
     if ui.windowHovered() then
@@ -101,14 +97,38 @@ function script.drawUI()
         ui.setMouseCursor(ui.MouseCursor.Arrow)
     end
 
-    ui.text("Direção de Prova - FCY")
+    -- Titulo com texto branco e fonte de destaque
+    ui.pushFont(ui.Font.Title)
+    ui.textColored("Direção de Prova - FCY", rgbm(1, 1, 1, 1))
+    ui.popFont()
     ui.separator()
 
+    -- Slider com fundo e pegador de alto contraste
+    ui.pushStyleColor(ui.StyleColor.FrameBg, rgbm(0.22, 0.24, 0.28, 1.0))
+    ui.pushStyleColor(ui.StyleColor.SliderGrab, rgbm(0.85, 0.88, 0.95, 1.0))
+    ui.pushStyleColor(ui.StyleColor.SliderGrabActive, rgbm(1.0, 1.0, 1.0, 1.0))
+    ui.pushStyleColor(ui.StyleColor.Text, rgbm(1, 1, 1, 1))
     ui.setNextItemWidth(-1)
     tempoSlider = ui.slider("##time", tempoSlider, 0, 10, "Contagem: %.0f s")
+    ui.popStyleColor(4)
 
+    -- Botao com cor dinamica: Vermelho para Acionar, Verde para Liberar
     local btnText = FCY and "LIBERAR (GREEN)" or "ACIONAR (DEPLOY)"
-    if ui.button(btnText, vec2(-1, 35)) then
+    if FCY then
+        ui.pushStyleColor(ui.StyleColor.Button, rgbm(0.18, 0.65, 0.28, 1.0))
+        ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.22, 0.78, 0.34, 1.0))
+        ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.14, 0.52, 0.22, 1.0))
+    else
+        ui.pushStyleColor(ui.StyleColor.Button, rgbm(0.80, 0.22, 0.22, 1.0))
+        ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.92, 0.28, 0.28, 1.0))
+        ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.68, 0.18, 0.18, 1.0))
+    end
+    ui.pushStyleColor(ui.StyleColor.Text, rgbm(1, 1, 1, 1))
+
+    local btnClicked = ui.button(btnText, vec2(-1, 35))
+    ui.popStyleColor(4)
+
+    if btnClicked then
         local novo = not FCY
         local t = novo and math.floor(tempoSlider) or 0
         ac.log(string.format(">>> [FCY UI CLICK] Botao clicado! Mudando para: %s (tempo: %d s)", tostring(novo), t))
@@ -121,13 +141,14 @@ function script.drawUI()
         comms({ fcy = novo, timer = t, req = false })
     end
 
+    -- Status com cores brilhantes e legiveis
     ui.dummy(vec2(0, 4))
     if FCY then
-        ui.textColored("STATUS: FCY ATIVO (MAX 80)", rgbm(1, 0.8, 0, 1))
+        ui.textColored("STATUS: FCY ATIVO (MAX 80)", rgbm(1.0, 0.85, 0.0, 1.0))
     elseif countdownTimer > 0 then
-        ui.textColored(string.format("STATUS: EM %d s...", countdownTimer), rgbm(1, 0.5, 0, 1))
+        ui.textColored(string.format("STATUS: EM %d s...", countdownTimer), rgbm(1.0, 0.55, 0.1, 1.0))
     else
-        ui.textColored("STATUS: PISTA VERDE", rgbm(0, 1, 0, 1))
+        ui.textColored("STATUS: PISTA VERDE", rgbm(0.25, 1.0, 0.35, 1.0))
     end
 
     ui.endTransparentWindow()
