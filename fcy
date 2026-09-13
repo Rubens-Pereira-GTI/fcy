@@ -173,7 +173,7 @@ function script.drawUI()
         -- Texto de status
         ui.setCursor(vec2(25, 7))
         ui.pushFont(ui.Font.Small)
-        ui.textColored(FCY and "FCY ATIVO" or "FCY ADMIN", rgbm.colors.white)
+        ui.textColored(FCY and "LAM ATIVO" or "LAM FCY", rgbm.colors.white)
         ui.popFont()
 
         -- Indicador de expansão (+)
@@ -235,7 +235,7 @@ function script.drawUI()
     ui.icon(ui.Icons.Bars, 15, rgbm(0.65, 0.75, 0.85, 1))
     ui.setCursor(vec2(30, 6))
     ui.pushFont(ui.Font.Title)
-    ui.textColored("Direção FCY", rgbm(1, 1, 1, 1))
+    ui.textColored("LAM FCY", rgbm(1, 1, 1, 1))
     ui.popFont()
 
     -- Botão Minimizar (-) no canto superior direito
