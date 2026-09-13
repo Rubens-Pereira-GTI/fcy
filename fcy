@@ -1,8 +1,8 @@
 -- ========================================================
--- FCY INSTRUMENTADO COM LOGS & DEBUG (SCRIPT_1)
+-- FCY INJETADO VIA CSP (SCRIPT_1) - TOTALMENTE INSTRUMENTADO
 -- ========================================================
 
-ac.log(">>> [FCY] 1. INICIALIZANDO SCRIPT_1 <<<")
+ac.log(">>> [FCY INIT] SCRIPT_1 carregado com sucesso <<<")
 
 local FCY = false
 local showUI = true
@@ -10,8 +10,41 @@ local countdownTimer = 0
 local secondTracker = 0
 local tempoSlider = 5
 
+-- Travas de log para nao floodar o arquivo durante a fisica
+local logLimiterActive = false
+local logGentleStopActive = false
+
+-- Depuracao em tela (Lua Debug)
 local drawUICalls = 0
 local updateCalls = 0
+
+-- Funcao central de mudanca de estado
+local function aplicarEstadoFCY(ativo, tempo, origem)
+    ac.log(string.format(">>> [FCY STATE] aplicarEstadoFCY chamado por [%s] | ativo=%s, tempo=%s", 
+        tostring(origem), tostring(ativo), tostring(tempo)))
+
+    if ativo then
+        countdownTimer = tempo or 0
+        if countdownTimer == 0 then
+            FCY = true
+            ac.log(">>> [FCY STATE] FCY IMEDIATO ATIVADO (Bandeira Amarela)")
+            ac.playUISound(ac.UISound.FlagCaution)
+            ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
+        else
+            ac.log(string.format(">>> [FCY STATE] CONTAGEM INICIADA (%d segundos)", countdownTimer))
+            ac.playUISound(ac.UISound.Notification)
+            ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+        end
+    else
+        FCY = false
+        countdownTimer = 0
+        physics.overrideRacingFlag(ac.FlagType.None)
+        ac.setTurningLights(ac.TurningLights.None)
+        ac.playUISound(ac.UISound.FlagGreen)
+        ac.setMessage("DIREÇÃO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
+        ac.log(">>> [FCY STATE] PISTA LIBERADA (Bandeira Verde e luzes desligadas)")
+    end
+end
 
 -- Canal de rede
 local comms
@@ -21,88 +54,108 @@ comms = ac.OnlineEvent({
     timer = ac.StructItem.uint8(),
     req = ac.StructItem.boolean()
 }, function(sender, message)
-    ac.log(string.format(">>> [FCY NET] Mensagem recebida! fcy=%s timer=%s req=%s", 
-        tostring(message.fcy), tostring(message.timer), tostring(message.req)))
+    ac.log(string.format(">>> [FCY NET RECV] Mensagem recebida de [%s]: fcy=%s, timer=%s, req=%s", 
+        tostring(sender), tostring(message.fcy), tostring(message.timer), tostring(message.req)))
 
     if message.req then
-        if FCY then comms({ fcy = true, timer = 0, req = false }) end
+        ac.log(">>> [FCY NET RECV] Piloto solicitou sincronizacao de estado atual")
+        if FCY then
+            ac.log(">>> [FCY NET SEND] Respondendo estado ativo para novo piloto")
+            comms({ fcy = true, timer = 0, req = false })
+        end
         return
     end
 
-    FCY = message.fcy
-    if FCY then
-        countdownTimer = message.timer
-        if countdownTimer == 0 then
-            ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
-        else
-            ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
-        end
-    else
-        countdownTimer = 0
-        physics.overrideRacingFlag(ac.FlagType.None)
-        ac.setTurningLights(ac.TurningLights.None)
-        ac.setMessage("DIREÇÃO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
-    end
+    aplicarEstadoFCY(message.fcy, message.timer, "REDE_CLIENTE")
 end, ac.SharedNamespace.Track)
 
+-- Renderizacao da interface
 function script.drawUI()
     drawUICalls = drawUICalls + 1
     ac.debug("FCY_drawUI_Calls", drawUICalls)
 
-    if not showUI then 
-        ac.debug("FCY_UI_Status", "Oculto por showUI=false")
-        return 
+    if not showUI then
+        ac.debug("FCY_UI_Status", "Oculto (F8 para abrir)")
+        return
     end
 
-    ac.debug("FCY_UI_Status", "Desenhando janela...")
+    ac.debug("FCY_UI_Status", "Visivel")
 
-    ui.beginWindow("FCY - Direção de Prova", vec2(40, 120), vec2(270, 160))
+    local winPos = vec2(40, 120)
+    local winSize = vec2(260, 155)
+
+    -- Fundo escuro solido
+    pcall(function()
+        ui.drawRectFilled(winPos, winPos + winSize, rgbm(0.08, 0.08, 0.08, 0.92), 6)
+        ui.drawRect(winPos, winPos + winSize, rgbm(0.35, 0.35, 0.35, 1.0), 6)
+    end)
+
+    ui.beginTransparentWindow("FCY_Admin", winPos + vec2(10, 10), winSize - vec2(20, 20))
+
+    ui.text("Direção de Prova - FCY")
+    ui.separator()
 
     tempoSlider = ui.slider("##time", tempoSlider, 0, 10, "Contagem: %.0f s")
 
     local btnText = FCY and "LIBERAR (GREEN)" or "ACIONAR (DEPLOY)"
     if ui.button(btnText, vec2(-1, 35)) then
-        ac.log(">>> [FCY UI] Botao pressionado! Novo estado: " .. tostring(not FCY))
-        FCY = not FCY
-        local t = FCY and math.floor(tempoSlider) or 0
-        comms({ fcy = FCY, timer = t, req = false })
+        local novo = not FCY
+        local t = novo and math.floor(tempoSlider) or 0
+        ac.log(string.format(">>> [FCY UI CLICK] Botao clicado! Mudando para: %s (tempo: %d s)", tostring(novo), t))
+
+        -- Aplica localmente
+        aplicarEstadoFCY(novo, t, "BOTAO_LOCAL")
+
+        -- Dispara para a rede
+        ac.log(">>> [FCY NET SEND] Disparando pacote de atualizacao para o grid")
+        comms({ fcy = novo, timer = t, req = false })
     end
 
     ui.dummy(vec2(0, 4))
     if FCY then
-        ui.textColored("STATUS: FCY ATIVO", rgbm(1, 0.8, 0, 1))
+        ui.textColored("STATUS: FCY ATIVO (MAX 80)", rgbm(1, 0.8, 0, 1))
     elseif countdownTimer > 0 then
         ui.textColored(string.format("STATUS: EM %d s...", countdownTimer), rgbm(1, 0.5, 0, 1))
     else
         ui.textColored("STATUS: PISTA VERDE", rgbm(0, 1, 0, 1))
     end
 
-    ui.endWindow()
+    ui.endTransparentWindow()
 end
 
+-- Loop de fisica e atualizacao
 function script.update(dt)
     updateCalls = updateCalls + 1
     ac.debug("FCY_update_Calls", updateCalls)
-    ac.debug("FCY_Current_Speed", string.format("%.1f km/h", ac.getCar(0).speedKmh))
+    ac.debug("FCY_Velocidade", string.format("%.1f km/h", ac.getCar(0).speedKmh))
 
+    -- Alternar visibilidade via F8
     if ui.keyboardButtonDown(ui.Key.F8) then
         showUI = not showUI
-        ac.log(">>> [FCY] Tecla F8 pressionada. showUI=" .. tostring(showUI))
+        ac.log(">>> [FCY KEY] Tecla F8 pressionada. Painel showUI=" .. tostring(showUI))
     end
 
+    -- Contagem regressiva
     if countdownTimer > 0 then
         secondTracker = secondTracker + dt
         if secondTracker >= 1.0 then
             secondTracker = secondTracker - 1.0
             countdownTimer = countdownTimer - 1
-            ac.log(">>> [FCY TIMER] Restam: " .. tostring(countdownTimer))
-            if countdownTimer == 0 then
+            ac.log(string.format(">>> [FCY TIMER TICK] Restam %d segundos", countdownTimer))
+
+            if countdownTimer > 0 then
+                ac.playUISound(ac.UISound.Notification)
+                ac.setMessage("DIREÇÃO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+            else
                 FCY = true
+                ac.log(">>> [FCY TIMER] Contagem finalizada! Ativando FCY pleno e limite de 80 km/h")
+                ac.playUISound(ac.UISound.FlagCaution)
                 ac.setMessage("DIREÇÃO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         end
     end
 
+    -- Regras fisicas e limitador
     if FCY then
         physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
@@ -110,15 +163,35 @@ function script.update(dt)
         local vel = ac.getCar(0).speedKmh
         if vel > 80 then
             physics.forceUserThrottleFor(dt, 0)
+            if not logLimiterActive then
+                ac.log(string.format(">>> [FCY PHYSICS] Carro acima de 80 km/h (%.1f km/h). Throttle cortado!", vel))
+                logLimiterActive = true
+            end
+
             if vel > 85 and physics.getCarInputControls().brake < 0.1 then
                 physics.setGentleStop(0, true)
+                if not logGentleStopActive then
+                    ac.log(string.format(">>> [FCY PHYSICS] Carro acima de 85 km/h (%.1f km/h). Freio automatico acionado!", vel))
+                    logGentleStopActive = true
+                end
             else
                 physics.setGentleStop(0, false)
+                logGentleStopActive = false
             end
         else
             physics.setGentleStop(0, false)
+            if logLimiterActive then
+                ac.log(string.format(">>> [FCY PHYSICS] Carro abaixo de 80 km/h (%.1f km/h). Throttle restaurado.", vel))
+                logLimiterActive = false
+            end
+            logGentleStopActive = false
         end
+    else
+        logLimiterActive = false
+        logGentleStopActive = false
     end
 end
 
-ac.log(">>> [FCY] 2. FIM DO MAIN CHUNK (SCRIPT CARREGADO COM SUCESSO) <<<")
+-- Requisicao inicial de sincronizacao
+ac.log(">>> [FCY INIT] Enviando requisicao de sincronizacao inicial de grid")
+comms({ req = true })
