@@ -10,7 +10,7 @@ ac.log(">>> [FCY INIT] SCRIPT_1 carregado com sucesso <<<")
 -- Adicione aqui o nome exato dos pilotos que têm permissão de Direção de Prova.
 -- Deve ser o mesmo nome configurado no Content Manager / Assetto Corsa.
 local admins = {
-    ["Rubensc"] = true,
+    ["Rubens .P"] = true,
     ["Diretor de Prova"] = true,
     ["Admin"] = true,
     -- Adicione outros administradores abaixo:
@@ -37,15 +37,20 @@ local tempoSlider = 5
 -- Posicao persistente da janela (salva automaticamente pelo CSP no disco)
 local storedPos
 pcall(function()
-    storedPos = ac.storage{ posX = 40, posY = 120 }
+    storedPos = ac.storage{ posX = 40, posY = 120, minimized = false }
 end)
 if not storedPos then
-    storedPos = { posX = 40, posY = 120 }
+    storedPos = { posX = 40, posY = 120, minimized = false }
 end
 
 -- Travas de log para nao floodar o arquivo durante a fisica
 local logLimiterActive = false
 local logGentleStopActive = false
+
+-- Estados das teclas para evitar múltiplos acionamentos em um único toque
+local lastF8Down = false
+local lastF9Down = false
+local badgeWasDragged = false
 
 -- Depuracao em tela (Lua Debug)
 local drawUICalls = 0
@@ -131,6 +136,64 @@ function script.drawUI()
     ac.debug("FCY_UI_Status", "Visivel")
 
     local winPos = vec2(storedPos.posX, storedPos.posY)
+
+    -- MODO MINIMIZADO: Desenha uma badge compacta/discreta com indicador de status
+    if storedPos.minimized then
+        local minSize = vec2(130, 30)
+        ui.beginTransparentWindow("FCY_Admin_Min", winPos, minSize, false, true)
+
+        local statusCol = FCY and rgbm(1.0, 0.85, 0.0, 1.0) or rgbm(0.25, 1.0, 0.35, 1.0)
+        ui.drawRectFilled(vec2(0, 0), minSize, rgbm(0.10, 0.10, 0.13, 0.94), 15)
+        ui.drawRect(vec2(0, 0), minSize, rgbm(0.40, 0.40, 0.45, 1.0), 15)
+        ui.drawCircleFilled(vec2(14, 15), 4.5, statusCol)
+
+        if ui.windowHovered() then
+            ui.captureMouse(true)
+            ui.setMouseCursor(ui.MouseCursor.Hand)
+        end
+
+        local curPos = ui.getCursor()
+        ui.invisibleButton("##minBtn", minSize)
+
+        -- Permite arrastar livremente mesmo minimizado
+        if ui.itemActive() then
+            local delta = ui.mouseDelta()
+            if delta.x ~= 0 or delta.y ~= 0 then
+                badgeWasDragged = true
+                local screenSize = ac.getUI().windowSize
+                storedPos.posX = math.clamp(storedPos.posX + delta.x, 0, screenSize.x - minSize.x)
+                storedPos.posY = math.clamp(storedPos.posY + delta.y, 0, screenSize.y - minSize.y)
+            end
+        end
+
+        if ui.itemHovered() then
+            ui.setTooltip("Clique para expandir o painel | Arraste para reposicionar")
+        end
+
+        if ui.itemClicked(ui.MouseButton.Left) then
+            badgeWasDragged = false
+        end
+
+        -- Se clicou e soltou sem arrastar, expande o painel
+        if ui.itemDeactivated() and not badgeWasDragged then
+            storedPos.minimized = false
+        end
+
+        -- Texto de status
+        ui.setCursor(vec2(25, 7))
+        ui.pushFont(ui.Font.Small)
+        ui.textColored(FCY and "FCY ATIVO" or "FCY ADMIN", rgbm.colors.white)
+        ui.popFont()
+
+        -- Indicador de expansão (+)
+        ui.setCursor(vec2(minSize.x - 18, 6))
+        ui.textColored("+", rgbm(0.75, 0.75, 0.85, 1.0))
+
+        ui.endTransparentWindow()
+        return
+    end
+
+    -- MODO EXPANDIDO: Painel completo
     local winSize = vec2(260, 160)
 
     -- Inicia a janela com inputs habilitados (true)
@@ -150,7 +213,7 @@ function script.drawUI()
 
     -- Barra de título arrastável (clicar e arrastar move a janela para qualquer lugar)
     local curPos = ui.getCursor()
-    ui.invisibleButton("##dragHeader", vec2(winSize.x - 16, 22))
+    ui.invisibleButton("##dragHeader", vec2(winSize.x - 62, 22))
 
     if ui.itemActive() then
         local delta = ui.mouseDelta()
@@ -171,13 +234,36 @@ function script.drawUI()
         end
     end
 
-    -- Desenha o ícone de alça e o título sobre a área arrastável
+    -- Desenha os elementos visuais da barra de título
     ui.setCursor(curPos)
     ui.icon(ui.Icons.Bars, 14, rgbm(0.65, 0.75, 0.85, 1))
     ui.sameLine(0, 6)
     ui.pushFont(ui.Font.Title)
-    ui.textColored("Direção de Prova - FCY", rgbm(1, 1, 1, 1))
+    ui.textColored("Direção FCY", rgbm(1, 1, 1, 1))
     ui.popFont()
+
+    -- Botões de Minimizar (_) e Fechar (✕) no canto superior direito
+    ui.sameLine(winSize.x - 52, 0)
+    ui.pushStyleColor(ui.StyleColor.Button, rgbm(0, 0, 0, 0))
+    ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.3, 0.3, 0.35, 0.8))
+    ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.2, 0.2, 0.25, 0.9))
+    ui.pushStyleColor(ui.StyleColor.Text, rgbm(0.85, 0.85, 0.85, 1.0))
+    if ui.button("_", vec2(20, 18)) then
+        storedPos.minimized = true
+    end
+    if ui.itemHovered() then
+        ui.setTooltip("Minimizar para badge compacta")
+    end
+
+    ui.sameLine(0, 4)
+    if ui.button("✕", vec2(20, 18)) then
+        showUI = false
+    end
+    if ui.itemHovered() then
+        ui.setTooltip("Fechar painel (pressione F8 para reabrir)")
+    end
+    ui.popStyleColor(4)
+
     ui.separator()
 
     -- Slider com fundo e pegador de alto contraste
@@ -239,20 +325,25 @@ function script.update(dt)
 
     -- Controles de administrador via teclado (apenas para quem é admin)
     if isLocalAdmin() then
-        -- Alternar visibilidade do painel via F8
-        if ui.keyboardButtonDown(ui.Key.F8) then
+        -- Alternar visibilidade do painel via F8 (Totalmente Invisível <-> Visível)
+        local f8 = ui.keyboardButtonDown(ui.Key.F8)
+        if f8 and not lastF8Down then
             showUI = not showUI
             ac.log(">>> [FCY KEY] Tecla F8 pressionada. Painel showUI=" .. tostring(showUI))
+            ac.setMessage("PAINEL FCY", showUI and "Painel ativado (Visível)" or "Painel oculto (F8 para reabrir)", nil, 2)
         end
+        lastF8Down = f8
 
         -- Atalho de teclado rápido via F9 (acionar / liberar sem precisar do mouse)
-        if ui.keyboardButtonDown(ui.Key.F9) then
+        local f9 = ui.keyboardButtonDown(ui.Key.F9)
+        if f9 and not lastF9Down then
             local novo = not FCY
             local t = novo and math.floor(tempoSlider) or 0
             ac.log(string.format(">>> [FCY KEY F9] Tecla F9 pressionada! Mudando para: %s (tempo: %d s)", tostring(novo), t))
             aplicarEstadoFCY(novo, t, "TECLA_F9")
             comms({ fcy = novo, timer = t, req = false })
         end
+        lastF9Down = f9
     end
 
     -- Contagem regressiva
