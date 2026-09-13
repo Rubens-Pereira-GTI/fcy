@@ -10,6 +10,15 @@ local countdownTimer = 0
 local secondTracker = 0
 local tempoSlider = 5
 
+-- Posicao persistente da janela (salva automaticamente pelo CSP no disco)
+local storedPos
+pcall(function()
+    storedPos = ac.storage{ posX = 40, posY = 120 }
+end)
+if not storedPos then
+    storedPos = { posX = 40, posY = 120 }
+end
+
 -- Travas de log para nao floodar o arquivo durante a fisica
 local logLimiterActive = false
 local logGentleStopActive = false
@@ -81,14 +90,16 @@ function script.drawUI()
 
     ac.debug("FCY_UI_Status", "Visivel")
 
-    local winPos = vec2(40, 120)
+    local winPos = vec2(storedPos.posX, storedPos.posY)
     local winSize = vec2(260, 160)
 
     -- Inicia a janela com inputs habilitados (true)
     ui.beginTransparentWindow("FCY_Admin", winPos, winSize, false, true)
 
     -- Fundo desenhado DENTRO da janela (ordem correta: desenha antes dos controles, ficando atrás deles)
-    ui.drawRectFilled(vec2(0, 0), winSize, rgbm(0.10, 0.10, 0.13, 0.92), 8)
+    ui.drawRectFilled(vec2(0, 0), winSize, rgbm(0.10, 0.10, 0.13, 0.94), 8)
+    -- Barra de cabeçalho sutil para indicar área arrastável
+    ui.drawRectFilled(vec2(0, 0), vec2(winSize.x, 26), rgbm(0.18, 0.20, 0.26, 0.90), 8, ui.CornerFlags.Top)
     ui.drawRect(vec2(0, 0), winSize, rgbm(0.40, 0.40, 0.45, 1.0), 8)
 
     -- Garante foco do mouse sobre a janela para nao interferir na camera/direcao do AC
@@ -97,7 +108,33 @@ function script.drawUI()
         ui.setMouseCursor(ui.MouseCursor.Arrow)
     end
 
-    -- Titulo com texto branco e fonte de destaque
+    -- Barra de título arrastável (clicar e arrastar move a janela para qualquer lugar)
+    local curPos = ui.getCursor()
+    ui.invisibleButton("##dragHeader", vec2(winSize.x - 16, 22))
+
+    if ui.itemActive() then
+        local delta = ui.mouseDelta()
+        if delta.x ~= 0 or delta.y ~= 0 then
+            local screenSize = ac.getUI().windowSize
+            storedPos.posX = math.clamp(storedPos.posX + delta.x, 0, screenSize.x - winSize.x)
+            storedPos.posY = math.clamp(storedPos.posY + delta.y, 0, screenSize.y - winSize.y)
+        end
+    end
+
+    if ui.itemHovered() then
+        ui.setMouseCursor(ui.MouseCursor.ResizeAll)
+        ui.setTooltip("Arraste para mover o painel (duplo clique para resetar posição)")
+        if ac.getUI().isMouseLeftKeyDoubleClicked then
+            storedPos.posX = 40
+            storedPos.posY = 120
+            ac.log(">>> [FCY UI] Posicao do painel resetada para o padrao (40, 120)")
+        end
+    end
+
+    -- Desenha o ícone de alça e o título sobre a área arrastável
+    ui.setCursor(curPos)
+    ui.icon(ui.Icons.Bars, 14, rgbm(0.65, 0.75, 0.85, 1))
+    ui.sameLine(0, 6)
     ui.pushFont(ui.Font.Title)
     ui.textColored("Direção de Prova - FCY", rgbm(1, 1, 1, 1))
     ui.popFont()
