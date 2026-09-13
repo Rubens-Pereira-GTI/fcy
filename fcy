@@ -4,6 +4,30 @@
 
 ac.log(">>> [FCY INIT] SCRIPT_1 carregado com sucesso <<<")
 
+-- ========================================================
+-- CONFIGURAÇÃO DE DIRETORES DE PROVA / ADMINS (OPÇÃO 1)
+-- ========================================================
+-- Adicione aqui o nome exato dos pilotos que têm permissão de Direção de Prova.
+-- Deve ser o mesmo nome configurado no Content Manager / Assetto Corsa.
+local admins = {
+    ["Rubens"] = true,
+    ["Diretor de Prova"] = true,
+    ["Admin"] = true,
+    -- Adicione outros administradores abaixo:
+    -- ["Seu Nome"] = true,
+}
+
+-- Verifica se o piloto local tem permissão de administrador
+local function isLocalAdmin()
+    -- Se estiver jogando offline (treino/teste local), libera para testes
+    if not ac.getServerIP() or ac.getServerIP() == "" then
+        return true
+    end
+
+    local myName = ac.getDriverName(0)
+    return myName ~= nil and admins[myName] == true
+end
+
 local FCY = false
 local showUI = true
 local countdownTimer = 0
@@ -68,11 +92,22 @@ comms = ac.OnlineEvent({
 
     if message.req then
         ac.log(">>> [FCY NET RECV] Piloto solicitou sincronizacao de estado atual")
-        if FCY then
+        -- Apenas administradores respondem requisicoes de sincronizacao de rede
+        if FCY and isLocalAdmin() then
             ac.log(">>> [FCY NET SEND] Respondendo estado ativo para novo piloto")
             comms({ fcy = true, timer = 0, req = false })
         end
         return
+    end
+
+    -- SEGURANÇA: Quando estiver online, ignora pacotes vindos de jogadores que não são admin
+    if sender and ac.getServerIP() and ac.getServerIP() ~= "" then
+        local senderCar = sender.index or (type(sender) == "number" and sender)
+        local senderName = senderCar and ac.getDriverName(senderCar)
+        if not senderName or admins[senderName] ~= true then
+            ac.log(string.format(">>> [FCY NET RECV] BLOQUEADO: Comando de FCY rejeitado (enviado por nao-admin: '%s')", tostring(senderName)))
+            return
+        end
     end
 
     aplicarEstadoFCY(message.fcy, message.timer, "REDE_CLIENTE")
@@ -82,6 +117,11 @@ end, ac.SharedNamespace.Track)
 function script.drawUI()
     drawUICalls = drawUICalls + 1
     ac.debug("FCY_drawUI_Calls", drawUICalls)
+
+    -- Apenas administradores veem a moldura de controle
+    if not isLocalAdmin() then
+        return
+    end
 
     if not showUI then
         ac.debug("FCY_UI_Status", "Oculto (F8 para abrir)")
@@ -197,19 +237,22 @@ function script.update(dt)
     ac.debug("FCY_update_Calls", updateCalls)
     ac.debug("FCY_Velocidade", string.format("%.1f km/h", ac.getCar(0).speedKmh))
 
-    -- Alternar visibilidade do painel via F8
-    if ui.keyboardButtonDown(ui.Key.F8) then
-        showUI = not showUI
-        ac.log(">>> [FCY KEY] Tecla F8 pressionada. Painel showUI=" .. tostring(showUI))
-    end
+    -- Controles de administrador via teclado (apenas para quem é admin)
+    if isLocalAdmin() then
+        -- Alternar visibilidade do painel via F8
+        if ui.keyboardButtonDown(ui.Key.F8) then
+            showUI = not showUI
+            ac.log(">>> [FCY KEY] Tecla F8 pressionada. Painel showUI=" .. tostring(showUI))
+        end
 
-    -- Atalho de teclado rápido via F9 (acionar / liberar sem precisar do mouse)
-    if ui.keyboardButtonDown(ui.Key.F9) then
-        local novo = not FCY
-        local t = novo and math.floor(tempoSlider) or 0
-        ac.log(string.format(">>> [FCY KEY F9] Tecla F9 pressionada! Mudando para: %s (tempo: %d s)", tostring(novo), t))
-        aplicarEstadoFCY(novo, t, "TECLA_F9")
-        comms({ fcy = novo, timer = t, req = false })
+        -- Atalho de teclado rápido via F9 (acionar / liberar sem precisar do mouse)
+        if ui.keyboardButtonDown(ui.Key.F9) then
+            local novo = not FCY
+            local t = novo and math.floor(tempoSlider) or 0
+            ac.log(string.format(">>> [FCY KEY F9] Tecla F9 pressionada! Mudando para: %s (tempo: %d s)", tostring(novo), t))
+            aplicarEstadoFCY(novo, t, "TECLA_F9")
+            comms({ fcy = novo, timer = t, req = false })
+        end
     end
 
     -- Contagem regressiva
