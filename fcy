@@ -7,21 +7,21 @@ local stor = ac.storage{
     t = 5
 }
 
--- Configurações de corrida
+-- Configurações
 local autoslow = true
 local dtLaps = 3
-local adminOnly = false -- Mantido false para testes imediatos de acionamento
+local adminOnly = false
 local altLimiter = false
-local windowVisible = true
+local showPanel = true
 
-ac.debug("!version", "woeFCYuponye v1.5 - Kunos ACSM Complete")
+ac.debug("!version", "woeFCYuponye v1.6 - Fixed")
 
 ac.onSessionStart(function (sessionIndex, restarted)
     FCY = false
     force = false
 end)
 
--- Sincronização via namespace de pista (não depende de servidor CSP dedicado)
+-- Rede via namespace de pista
 local comms
 comms = ac.OnlineEvent({
     ac.StructItem.key("FCY_KUNOS"),
@@ -30,7 +30,6 @@ comms = ac.OnlineEvent({
     req = ac.StructItem.boolean()
 }, function(sender, message)
     local timer = message.time
-    ac.log(string.format("Comms: fcy=%s time=%d req=%s", tostring(message.fcy), message.time, tostring(message.req)))
 
     if message.req then
         if FCY then
@@ -74,50 +73,21 @@ function castStatus(t)
     end
 end
 
--- Botão físico/atalho mapeado no CSP
+-- Acionamento por botão físico/volante
 fcyToggle:onPressed(function ()
     if (adminOnly and sim.isAdmin) or not adminOnly then
         castStatus({ fcy = (not FCY), time = stor.t, req = false })
     end
 end)
 
--- Desenho do painel de controle
-local function drawFCYPanel()
-    stor.t = ui.slider("Contagem", stor.t, 0, 20, '%.0f seg')
-    
-    local btnText = FCY and "LIBERAR PISTA (LIFT)" or "ACIONAR FCY (DEPLOY)"
-    if ui.button(btnText, vec2(-1, 35)) then
-        if (adminOnly and sim.isAdmin) or not adminOnly then
-            castStatus({ fcy = (not FCY), time = stor.t, req = false })
-        else
-            ac.setMessage("FCY", "Apenas administradores podem acionar.", nil, 3)
-        end
-    end
-    
-    ui.text(string.format("Status: %s | Admin: %s", FCY and "ATIVO" or "OFF", tostring(sim.isAdmin)))
-    fcyToggle:control(vec2(100, 100))
-end
-
--- 1. Registro formal na barra de ferramentas/apps do CSP
-ui.registerWindow("Controle FCY", vec2(250, 140), drawFCYPanel)
-
--- 2. Renderização direta na tela caso o script esteja confinado como Server Script
-function script.drawUI()
-    if windowVisible then
-        ui.begin("Controle FCY", vec2(250, 140))
-        drawFCYPanel()
-        ui.endTransparentWindow()
-    end
-end
-
 local wasstop = false
 local wasforce = false
 local wasFCY = false
 
 function script.update(dt)
-    -- Tecla F8 alterna a visibilidade da janela flutuante
+    -- Tecla F8 para alternar a exibição do painel na tela
     if ui.keyboardButtonDown(ui.KeyIndex.F8) then
-        windowVisible = not windowVisible
+        showPanel = not showPanel
     end
 
     local stop = false
@@ -166,7 +136,26 @@ function script.update(dt)
     wasstop = stop
     wasforce = force
     wasFCY = FCY
+
+    -- RENDERIZAÇÃO DA INTERFACE DIRETO NO CANVAS DO CLIENTE
+    if showPanel then
+        ui.beginTransparentWindow("FCY_Panel", vec2(20, 100), vec2(230, 130))
+        
+        ui.text("PAINEL FCY (ADMIN)")
+        stor.t = ui.slider("Tempo", stor.t, 0, 20, '%.0f s')
+        
+        local btnText = FCY and "LIBERAR (LIFT)" or "ACIONAR FCY"
+        if ui.button(btnText, vec2(-1, 35)) then
+            if (adminOnly and sim.isAdmin) or not adminOnly then
+                castStatus({ fcy = (not FCY), time = stor.t, req = false })
+            else
+                ac.setMessage("FCY", "Sem permissão de admin.", nil, 3)
+            end
+        end
+        
+        ui.text(string.format("Status: %s | F8 oculta", FCY and "ATIVADO" or "DESATIVADO"))
+        ui.endTransparentWindow()
+    end
 end
 
--- Solicita o estado atual ao entrar na sessão
 castStatus({ req = true })
