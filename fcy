@@ -1,9 +1,7 @@
-local sim = ac.getSim()
 local FCY = false
 local force = false
 local autoslow = true
-local dtLaps = 3
-local altLimiter = false
+local countdownTimer = 0
 
 local comms
 comms = ac.OnlineEvent({
@@ -12,83 +10,54 @@ comms = ac.OnlineEvent({
     time = ac.StructItem.uint8(),
     req = ac.StructItem.boolean()
 }, function(sender, message)
-    local timer = message.time
-
     if message.req then
-        if FCY then
-            comms({ fcy = FCY, time = 0, req = false })
-        end
+        if FCY then comms({ fcy = FCY, time = 0, req = false }) end
     else
-        if FCY ~= message.fcy then
-            FCY = message.fcy
-
-            setInterval(function()
-                if timer > 0 then
-                    local txt = FCY and "FCY DEPLOYED IN " or "FCY LIFTED IN "
-                    ac.setMessage("FCY", txt .. timer, nil, 5)
-                    timer = timer - 1
-                else
-                    local txt = FCY and "FCY DEPLOYED" or "FCY LIFTED"
-                    ac.setMessage("FCY", txt, nil, 5)
-                    force = FCY
-                    return clearInterval
-                end
-            end, 1, "FCY_TIMER")
+        FCY = message.fcy
+        if FCY then
+            countdownTimer = message.time or 0
+            if countdownTimer == 0 then
+                force = true
+                ac.setMessage("FCY", "FULL COURSE YELLOW", nil, 5)
+            end
+        else
+            countdownTimer = 0
+            force = false
+            physics.overrideRacingFlag(ac.FlagType.None)
+            ac.setTurningLights(ac.TurningLights.None)
+            ac.setMessage("FCY", "TRACK CLEAR - GREEN FLAG", nil, 4)
         end
     end
 end, ac.SharedNamespace.Track)
 
-local wasstop = false
-local wasforce = false
-local wasFCY = false
+local secondTracker = 0
 
 function script.update(dt)
-    local stop = false
-
-    if autoslow then       
-        if (car.speedKmh > 85) and force then
-            if physics.getCarInputControls().brake < 0.1 then
-                stop = true
-            end
-        elseif car.speedKmh > 79 and force then
-            if altLimiter then
-                physics.setEngineRPM(0, car.rpm - (100 * (math.max(car.speedKmh - 79, 0))))
-            else
-                if not car.manualPitsSpeedLimiterEnabled then
-                    physics.forceUserThrottleFor(dt, 0)
-                end
+    -- Gerencia a contagem regressiva segundo a segundo
+    if countdownTimer > 0 then
+        secondTracker = secondTracker + dt
+        if secondTracker >= 1.0 then
+            secondTracker = 0
+            -- Este aviso aparece com você no box ou na pista:
+            ac.setMessage("FCY", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+            countdownTimer = countdownTimer - 1
+            
+            if countdownTimer == 0 then
+                force = true
+                ac.setMessage("FCY", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         end
     end
 
-    if dtLaps > 0 then
-        if car.speedKmh > 80.5 and force then
-            physics.setCarPenalty(ac.PenaltyType.MandatoryPits, dtLaps)
-        end
-    end
-
-    if FCY then
-        if not wasFCY then
-            physics.overrideRacingFlag(ac.FlagType.Caution)  
-        end
+    -- Aplicação das regras quando o FCY é efetivado
+    if force then
+        physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
-    end
 
-    if not force and wasforce then
-        ac.setTurningLights(ac.TurningLights.None)
-        physics.overrideRacingFlag(ac.FlagType.None)  
+        if autoslow and car.speedKmh > 80 then
+            physics.forceUserThrottleFor(dt, 0)
+        end
     end
-
-    if stop and not wasstop then
-        physics.setGentleStop(0, true)
-    end
-    if not stop and wasstop then
-        physics.setGentleStop(0, false)
-    end
-    
-    wasstop = stop
-    wasforce = force
-    wasFCY = FCY
 end
 
 comms({ req = true })
