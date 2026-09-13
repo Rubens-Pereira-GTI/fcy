@@ -1,49 +1,72 @@
--- ==========================================
--- SCRIPT DE PISTA: FCY (Física e Sincronização)
--- ==========================================
-
 local FCY = false
-local force = false
-local autoslow = true
 local countdownTimer = 0
 local secondTracker = 0
+local stor = { t = 0 }
 
--- Receptor de eventos
-local comms
-comms = ac.OnlineEvent({
-    ac.StructItem.key("FCY_KUNOS"),
-    fcy = ac.StructItem.boolean(),
-    time = ac.StructItem.uint8(),
-    req = ac.StructItem.boolean()
-}, function(sender, message)
-    if message.req then
-        if FCY then
-            comms({ fcy = true, time = 0, req = false })
-        end
-        return
-    end
-
-    FCY = message.fcy
-    local t = message.time or 0
-
-    if FCY then
-        if t > 0 then
-            countdownTimer = t
-            secondTracker = 0
-            ac.setMessage("FCY CONTROL", string.format("FCY EM %d SEGUNDOS", t), nil, 1)
+-- Funcao unificada para aplicar os estados no carro
+local function setFCYState(active, timer)
+    if active then
+        countdownTimer = timer or 0
+        if countdownTimer == 0 then
+            FCY = true
+            ac.playUISound(ac.UISound.FlagCaution)
+            ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
         else
-            countdownTimer = 0
-            force = true
-            ac.setMessage("FCY CONTROL", "FULL COURSE YELLOW ATIVADO", nil, 5)
+            ac.playUISound(ac.UISound.Notification)
+            ac.setMessage("DIRECAO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
         end
     else
+        FCY = false
         countdownTimer = 0
-        force = false
         physics.overrideRacingFlag(ac.FlagType.None)
         ac.setTurningLights(ac.TurningLights.None)
-        ac.setMessage("FCY CONTROL", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
+        ac.playUISound(ac.UISound.FlagGreen)
+        ac.setMessage("DIRECAO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
     end
-end, ac.SharedNamespace.Track)
+end
+
+-- Canal de rede para sincronizar OUTROS pilotos conectados
+local comms = ac.OnlineEvent({
+    ac.StructItem.key("LAM_FCY_NET"),
+    active = ac.StructItem.boolean(),
+    timer = ac.StructItem.uint8()
+}, function(sender, message)
+    -- Disparado apenas na maquina dos outros pilotos
+    setFCYState(message.active, message.timer)
+end)
+
+function script.windowMain(dt)
+    ui.text("Direcao de Prova - FCY")
+    ui.separator()
+
+    stor.t = ui.slider("##tempo", stor.t, 0, 10, "Contagem: %.0f s")
+
+    if not FCY then
+        if ui.button("ACIONAR FCY (DEPLOY)", vec2(-1, 35)) then
+            local t = math.floor(stor.t)
+            -- 1. Aplica no seu proprio cliente imediatamente (funciona mesmo sozinho)
+            setFCYState(true, t)
+            -- 2. Transmite para o grid
+            comms({ active = true, timer = t })
+        end
+    else
+        if ui.button("LIBERAR PISTA (GREEN)", vec2(-1, 35)) then
+            -- 1. Libera para voce imediatamente
+            setFCYState(false, 0)
+            -- 2. Transmite a liberacao para o grid
+            comms({ active = false, timer = 0 })
+        end
+    end
+
+    ui.dummy(vec2(0, 4))
+    if FCY then
+        ui.textColored("STATUS: FCY ATIVO (MAX 80 KM/H)", rgbm(1, 0.8, 0, 1))
+    elseif countdownTimer > 0 then
+        ui.textColored(string.format("STATUS: FCY EM %d s...", countdownTimer), rgbm(1, 0.5, 0, 1))
+    else
+        ui.textColored("STATUS: PISTA VERDE", rgbm(0, 1, 0, 1))
+    end
+end
 
 function script.update(dt)
     -- Contagem regressiva
@@ -52,25 +75,27 @@ function script.update(dt)
         if secondTracker >= 1.0 then
             secondTracker = secondTracker - 1.0
             countdownTimer = countdownTimer - 1
-            
+
             if countdownTimer > 0 then
-                ac.setMessage("FCY CONTROL", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+                ac.playUISound(ac.UISound.Notification)
+                ac.setMessage("DIRECAO DE PROVA", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
             else
-                force = true
-                ac.setMessage("FCY CONTROL", "FULL COURSE YELLOW ATIVADO", nil, 5)
+                FCY = true
+                ac.playUISound(ac.UISound.FlagCaution)
+                ac.setMessage("DIRECAO DE PROVA", "FULL COURSE YELLOW ATIVADO", nil, 5)
             end
         end
     end
 
-    -- Regras durante o FCY
-    if force then
+    -- Regras ativas durante o FCY
+    if FCY then
         physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
 
-        -- Limitador a 80 km/h
-        if autoslow and car.speedKmh > 80 then
+        local vel = ac.getCar(0).speedKmh
+        if vel > 80 then
             physics.forceUserThrottleFor(dt, 0)
-            if car.speedKmh > 85 and physics.getCarInputControls().brake < 0.1 then
+            if vel > 85 and physics.getCarInputControls().brake < 0.1 then
                 physics.setGentleStop(0, true)
             else
                 physics.setGentleStop(0, false)
@@ -80,6 +105,3 @@ function script.update(dt)
         end
     end
 end
-
--- Solicita estado ao entrar
-comms({ req = true })
