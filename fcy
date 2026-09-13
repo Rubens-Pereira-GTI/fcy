@@ -48,7 +48,7 @@ local logLimiterActive = false
 local logGentleStopActive = false
 
 -- Estados das teclas para evitar múltiplos acionamentos em um único toque
-local lastF8Down = false
+local lastF10Down = false
 local lastF9Down = false
 local badgeWasDragged = false
 
@@ -194,16 +194,20 @@ function script.drawUI()
     end
 
     -- MODO EXPANDIDO: Painel completo
-    local winSize = vec2(260, 160)
+    local winSize = vec2(270, 152)
+    local headerHeight = 32
 
     -- Inicia a janela com inputs habilitados (true)
     ui.beginTransparentWindow("FCY_Admin", winPos, winSize, false, true)
 
-    -- Fundo desenhado DENTRO da janela (ordem correta: desenha antes dos controles, ficando atrás deles)
-    ui.drawRectFilled(vec2(0, 0), winSize, rgbm(0.10, 0.10, 0.13, 0.94), 8)
-    -- Barra de cabeçalho sutil para indicar área arrastável
-    ui.drawRectFilled(vec2(0, 0), vec2(winSize.x, 26), rgbm(0.18, 0.20, 0.26, 0.90), 8, ui.CornerFlags.Top)
-    ui.drawRect(vec2(0, 0), winSize, rgbm(0.40, 0.40, 0.45, 1.0), 8)
+    -- Fundo desenhado DENTRO da janela
+    ui.drawRectFilled(vec2(0, 0), winSize, rgbm(0.10, 0.10, 0.13, 0.96), 8)
+    -- Barra de cabeçalho com altura adequada (32px) para não cortar nem sobrepor botões
+    ui.drawRectFilled(vec2(0, 0), vec2(winSize.x, headerHeight), rgbm(0.18, 0.20, 0.26, 0.95), 8, ui.CornerFlags.Top)
+    -- Linha de separação nítida sob o cabeçalho
+    ui.drawLine(vec2(0, headerHeight), vec2(winSize.x, headerHeight), rgbm(0.30, 0.32, 0.40, 1.0), 1)
+    -- Borda externa da janela
+    ui.drawRect(vec2(0, 0), winSize, rgbm(0.40, 0.40, 0.46, 1.0), 8)
 
     -- Garante foco do mouse sobre a janela para nao interferir na camera/direcao do AC
     if ui.windowHovered() then
@@ -211,9 +215,9 @@ function script.drawUI()
         ui.setMouseCursor(ui.MouseCursor.Arrow)
     end
 
-    -- Barra de título arrastável (clicar e arrastar move a janela para qualquer lugar)
-    local curPos = ui.getCursor()
-    ui.invisibleButton("##dragHeader", vec2(winSize.x - 62, 22))
+    -- Área de arrasto do cabeçalho (cobre o cabeçalho exceto os botões de ação à direita)
+    ui.setCursor(vec2(0, 0))
+    ui.invisibleButton("##dragHeader", vec2(winSize.x - 72, headerHeight))
 
     if ui.itemActive() then
         local delta = ui.mouseDelta()
@@ -234,44 +238,52 @@ function script.drawUI()
         end
     end
 
-    -- Desenha os elementos visuais da barra de título
-    ui.setCursor(curPos)
-    ui.icon(ui.Icons.Bars, 14, rgbm(0.65, 0.75, 0.85, 1))
-    ui.sameLine(0, 6)
+    -- Ícone e Título do cabeçalho
+    ui.setCursor(vec2(10, 8))
+    ui.icon(ui.Icons.Bars, 15, rgbm(0.65, 0.75, 0.85, 1))
+    ui.setCursor(vec2(30, 6))
     ui.pushFont(ui.Font.Title)
     ui.textColored("Direção FCY", rgbm(1, 1, 1, 1))
     ui.popFont()
 
-    -- Botões de Minimizar (_) e Fechar (✕) no canto superior direito
-    ui.sameLine(winSize.x - 52, 0)
+    -- Botões de Minimizar (-) e Fechar (X)
+    -- Perfeitamente contidos dentro do cabeçalho (Y=4, Altura=24 cabe com folga dentro de headerHeight=32)
+    local btnSize = vec2(26, 24)
+
+    -- Botão Minimizar (-)
+    ui.setCursor(vec2(winSize.x - 62, 4))
     ui.pushStyleColor(ui.StyleColor.Button, rgbm(0, 0, 0, 0))
-    ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.3, 0.3, 0.35, 0.8))
-    ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.2, 0.2, 0.25, 0.9))
-    ui.pushStyleColor(ui.StyleColor.Text, rgbm(0.85, 0.85, 0.85, 1.0))
-    if ui.button("_", vec2(20, 18)) then
+    ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.32, 0.35, 0.44, 0.85))
+    ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.20, 0.22, 0.28, 0.95))
+    ui.pushStyleColor(ui.StyleColor.Text, rgbm(0.9, 0.9, 0.9, 1.0))
+    if ui.button("-", btnSize) then
         storedPos.minimized = true
     end
     if ui.itemHovered() then
         ui.setTooltip("Minimizar para badge compacta")
     end
 
-    ui.sameLine(0, 4)
-    if ui.button("✕", vec2(20, 18)) then
+    -- Botão Fechar (X) com destaque vermelho ao passar o mouse
+    ui.setCursor(vec2(winSize.x - 32, 4))
+    ui.pushStyleColor(ui.StyleColor.ButtonHovered, rgbm(0.85, 0.22, 0.22, 0.95))
+    ui.pushStyleColor(ui.StyleColor.ButtonActive, rgbm(0.65, 0.15, 0.15, 1.0))
+    if ui.button("X", btnSize) then
         showUI = false
+        ac.setMessage("PAINEL FCY", "Painel fechado (pressione F10 para reabrir)", nil, 2)
     end
     if ui.itemHovered() then
-        ui.setTooltip("Fechar painel (pressione F8 para reabrir)")
+        ui.setTooltip("Fechar painel (pressione F10 para reabrir)")
     end
-    ui.popStyleColor(4)
+    ui.popStyleColor(6)
 
-    ui.separator()
-
+    -- ÁREA DO CORPO (abaixo do cabeçalho)
     -- Slider com fundo e pegador de alto contraste
+    ui.setCursor(vec2(12, headerHeight + 10))
     ui.pushStyleColor(ui.StyleColor.FrameBg, rgbm(0.22, 0.24, 0.28, 1.0))
     ui.pushStyleColor(ui.StyleColor.SliderGrab, rgbm(0.85, 0.88, 0.95, 1.0))
     ui.pushStyleColor(ui.StyleColor.SliderGrabActive, rgbm(1.0, 1.0, 1.0, 1.0))
     ui.pushStyleColor(ui.StyleColor.Text, rgbm(1, 1, 1, 1))
-    ui.setNextItemWidth(-1)
+    ui.setNextItemWidth(winSize.x - 24)
     tempoSlider = ui.slider("##time", tempoSlider, 0, 10, "Contagem: %.0f s")
     ui.popStyleColor(4)
 
@@ -288,7 +300,8 @@ function script.drawUI()
     end
     ui.pushStyleColor(ui.StyleColor.Text, rgbm(1, 1, 1, 1))
 
-    local btnClicked = ui.button(btnText, vec2(-1, 35))
+    ui.setCursor(vec2(12, headerHeight + 42))
+    local btnClicked = ui.button(btnText, vec2(winSize.x - 24, 38))
     ui.popStyleColor(4)
 
     if btnClicked then
@@ -305,7 +318,7 @@ function script.drawUI()
     end
 
     -- Status com cores brilhantes e legiveis
-    ui.dummy(vec2(0, 4))
+    ui.setCursor(vec2(12, headerHeight + 88))
     if FCY then
         ui.textColored("STATUS: FCY ATIVO (MAX 80)", rgbm(1.0, 0.85, 0.0, 1.0))
     elseif countdownTimer > 0 then
@@ -325,14 +338,14 @@ function script.update(dt)
 
     -- Controles de administrador via teclado (apenas para quem é admin)
     if isLocalAdmin() then
-        -- Alternar visibilidade do painel via F8 (Totalmente Invisível <-> Visível)
-        local f8 = ui.keyboardButtonDown(ui.Key.F8)
-        if f8 and not lastF8Down then
+        -- Alternar visibilidade do painel via F10 (Totalmente Invisível <-> Visível)
+        local f10 = ui.keyboardButtonDown(ui.Key.F10)
+        if f10 and not lastF10Down then
             showUI = not showUI
-            ac.log(">>> [FCY KEY] Tecla F8 pressionada. Painel showUI=" .. tostring(showUI))
-            ac.setMessage("PAINEL FCY", showUI and "Painel ativado (Visível)" or "Painel oculto (F8 para reabrir)", nil, 2)
+            ac.log(">>> [FCY KEY] Tecla F10 pressionada. Painel showUI=" .. tostring(showUI))
+            ac.setMessage("PAINEL FCY", showUI and "Painel ativado (Visível)" or "Painel oculto (F10 para reabrir)", nil, 2)
         end
-        lastF8Down = f8
+        lastF10Down = f10
 
         -- Atalho de teclado rápido via F9 (acionar / liberar sem precisar do mouse)
         local f9 = ui.keyboardButtonDown(ui.Key.F9)
