@@ -1,8 +1,14 @@
+-- ==========================================
+-- SCRIPT DO SERVIDOR: FCY (Lógica & Física)
+-- ==========================================
+
 local FCY = false
 local force = false
 local autoslow = true
 local countdownTimer = 0
+local secondTracker = 0
 
+-- Canal de comunicação sincronizado com o App de cliente
 local comms
 comms = ac.OnlineEvent({
     ac.StructItem.key("FCY_KUNOS"),
@@ -10,54 +16,82 @@ comms = ac.OnlineEvent({
     time = ac.StructItem.uint8(),
     req = ac.StructItem.boolean()
 }, function(sender, message)
+    -- Quando um novo piloto entra na sessão, sincroniza o estado atual da pista
     if message.req then
-        if FCY then comms({ fcy = FCY, time = 0, req = false }) end
-    else
-        FCY = message.fcy
         if FCY then
-            countdownTimer = message.time or 0
-            if countdownTimer == 0 then
-                force = true
-                ac.setMessage("FCY", "FULL COURSE YELLOW", nil, 5)
-            end
+            comms({ fcy = FCY, time = 0, req = false })
+        end
+        return
+    end
+
+    -- Recebeu comando de acionamento ou liberação do App
+    FCY = message.fcy
+    local timer = message.time or 0
+
+    if FCY then
+        if timer > 0 then
+            countdownTimer = timer
+            secondTracker = 0
+            ac.sendChatMessage(string.format("--- FCY EM %d SEGUNDOS ---", timer))
+            ac.setMessage("FCY", string.format("FCY DEPLOYED IN %d", timer), nil, 1)
         else
             countdownTimer = 0
-            force = false
-            physics.overrideRacingFlag(ac.FlagType.None)
-            ac.setTurningLights(ac.TurningLights.None)
-            ac.setMessage("FCY", "TRACK CLEAR - GREEN FLAG", nil, 4)
+            force = true
+            ac.sendChatMessage("--- FULL COURSE YELLOW (MAX 80 KM/H) ---")
+            ac.setMessage("FCY", "FULL COURSE YELLOW", nil, 5)
+            physics.overrideRacingFlag(ac.FlagType.Caution)
         end
+    else
+        -- Bandeira verde / Pista liberada
+        countdownTimer = 0
+        force = false
+        physics.overrideRacingFlag(ac.FlagType.None)
+        ac.setTurningLights(ac.TurningLights.None)
+        ac.sendChatMessage("--- PISTA LIBERADA (GREEN FLAG) ---")
+        ac.setMessage("FCY", "TRACK CLEAR - GREEN FLAG", nil, 5)
     end
 end, ac.SharedNamespace.Track)
 
-local secondTracker = 0
-
 function script.update(dt)
-    -- Gerencia a contagem regressiva segundo a segundo
+    -- Gerenciamento da contagem regressiva
     if countdownTimer > 0 then
         secondTracker = secondTracker + dt
         if secondTracker >= 1.0 then
-            secondTracker = 0
-            -- Este aviso aparece com você no box ou na pista:
-            ac.setMessage("FCY", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+            secondTracker = secondTracker - 1.0
             countdownTimer = countdownTimer - 1
             
-            if countdownTimer == 0 then
+            if countdownTimer > 0 then
+                ac.setMessage("FCY", string.format("FCY EM %d SEGUNDOS", countdownTimer), nil, 1)
+                ac.sendChatMessage(string.format("FCY EM %d...", countdownTimer))
+            else
                 force = true
-                ac.setMessage("FCY", "FULL COURSE YELLOW ATIVADO", nil, 5)
+                ac.sendChatMessage("--- FULL COURSE YELLOW ATIVADO ---")
+                ac.setMessage("FCY", "FULL COURSE YELLOW", nil, 5)
+                physics.overrideRacingFlag(ac.FlagType.Caution)
             end
         end
     end
 
-    -- Aplicação das regras quando o FCY é efetivado
+    -- Regras físicas ativas durante o FCY
     if force then
-        physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
+        physics.overrideRacingFlag(ac.FlagType.Caution)
 
-        if autoslow and car.speedKmh > 80 then
-            physics.forceUserThrottleFor(dt, 0)
+        -- Limitador de velocidade em 80 km/h
+        if autoslow then
+            if car.speedKmh > 85 then
+                if physics.getCarInputControls().brake < 0.1 then
+                    physics.setGentleStop(0, true)
+                end
+            elseif car.speedKmh > 80 then
+                physics.setGentleStop(0, false)
+                physics.forceUserThrottleFor(dt, 0)
+            else
+                physics.setGentleStop(0, false)
+            end
         end
     end
 end
 
+-- Sincroniza ao inicializar
 comms({ req = true })
