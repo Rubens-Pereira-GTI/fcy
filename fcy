@@ -1,27 +1,10 @@
 local sim = ac.getSim()
-local fcyToggle = ac.ControlButton("FCYTOGGLE")
 local FCY = false
 local force = false
-ac.storageSetPath('woeFCYuponye')
-local stor = ac.storage{
-    t = 5
-}
-
--- Configurações
 local autoslow = true
 local dtLaps = 3
-local adminOnly = false
 local altLimiter = false
-local showPanel = true
 
-ac.debug("!version", "woeFCYuponye v1.6 - Fixed")
-
-ac.onSessionStart(function (sessionIndex, restarted)
-    FCY = false
-    force = false
-end)
-
--- Rede via namespace de pista
 local comms
 comms = ac.OnlineEvent({
     ac.StructItem.key("FCY_KUNOS"),
@@ -41,19 +24,12 @@ comms = ac.OnlineEvent({
 
             setInterval(function()
                 if timer > 0 then
-                    if FCY then
-                        ac.setMessage("FCY", "FCY DEPLOYED IN " .. timer, nil, 5)
-                    else
-                        ac.setMessage("FCY", "FCY LIFTED IN " .. timer, nil, 5)
-                    end
+                    local txt = FCY and "FCY DEPLOYED IN " or "FCY LIFTED IN "
+                    ac.setMessage("FCY", txt .. timer, nil, 5)
                     timer = timer - 1
                 else
-                    if FCY then
-                        ac.setMessage("FCY", "FCY DEPLOYED", nil, 5)
-                    else
-                        ac.setMessage("FCY", "FCY LIFTED", nil, 5)
-                    end
-
+                    local txt = FCY and "FCY DEPLOYED" or "FCY LIFTED"
+                    ac.setMessage("FCY", txt, nil, 5)
                     force = FCY
                     return clearInterval
                 end
@@ -62,34 +38,11 @@ comms = ac.OnlineEvent({
     end
 end, ac.SharedNamespace.Track)
 
-function castStatus(t)
-    math.randomseed(sim.currentSessionTime)
-    if not comms(t) then
-        setInterval(function ()
-            if comms(t) then
-                return clearInterval
-            end
-        end, math.random())
-    end
-end
-
--- Acionamento por botão físico/volante
-fcyToggle:onPressed(function ()
-    if (adminOnly and sim.isAdmin) or not adminOnly then
-        castStatus({ fcy = (not FCY), time = stor.t, req = false })
-    end
-end)
-
 local wasstop = false
 local wasforce = false
 local wasFCY = false
 
 function script.update(dt)
-    -- Tecla F8 para alternar a exibição do painel na tela
-    if ui.keyboardButtonDown(ui.KeyIndex.F8) then
-        showPanel = not showPanel
-    end
-
     local stop = false
 
     if autoslow then       
@@ -136,26 +89,6 @@ function script.update(dt)
     wasstop = stop
     wasforce = force
     wasFCY = FCY
-
-    -- RENDERIZAÇÃO DA INTERFACE DIRETO NO CANVAS DO CLIENTE
-    if showPanel then
-        ui.beginTransparentWindow("FCY_Panel", vec2(20, 100), vec2(230, 130))
-        
-        ui.text("PAINEL FCY (ADMIN)")
-        stor.t = ui.slider("Tempo", stor.t, 0, 20, '%.0f s')
-        
-        local btnText = FCY and "LIBERAR (LIFT)" or "ACIONAR FCY"
-        if ui.button(btnText, vec2(-1, 35)) then
-            if (adminOnly and sim.isAdmin) or not adminOnly then
-                castStatus({ fcy = (not FCY), time = stor.t, req = false })
-            else
-                ac.setMessage("FCY", "Sem permissão de admin.", nil, 3)
-            end
-        end
-        
-        ui.text(string.format("Status: %s | F8 oculta", FCY and "ATIVADO" or "DESATIVADO"))
-        ui.endTransparentWindow()
-    end
 end
 
-castStatus({ req = true })
+comms({ req = true })
