@@ -1,8 +1,6 @@
 -- ========================================================
--- FCY INJETADO VIA CSP (Direção de Prova)
+-- FCY INJETADO VIA CSP (SCRIPT_1)
 -- ========================================================
-
-local ADMIN_STEAM_ID = "76561198091832668"
 
 local FCY = false
 local showUI = true
@@ -10,33 +8,7 @@ local countdownTimer = 0
 local secondTracker = 0
 local tempoSlider = 5
 
--- Leitura segura de structs C (evita o crash de membro inexistente)
-local function safeRead(cdataObj, key)
-    if not cdataObj then return nil end
-    local ok, value = pcall(function() return cdataObj[key] end)
-    return ok and value or nil
-end
-
--- Valida se o usuário atual é o comissário/diretor
-local function isDirector()
-    local car = ac.getCar(0)
-    local sim = ac.getSim()
-
-    -- 1. Se estiver em Single Player / Prática Offline, libera sempre
-    if sim and not sim.isOnlineRace then
-        return true
-    end
-
-    -- 2. Tenta ler o GUID/SteamID na struct do carro ou simulação
-    local playerGuid = tostring(safeRead(car, "guid") or safeRead(sim, "userGuid") or "")
-    if playerGuid == ADMIN_STEAM_ID then
-        return true
-    end
-
-    return false
-end
-
--- Comunicação de rede CSP
+-- Canal de rede entre os carros
 local comms
 comms = ac.OnlineEvent({
     ac.StructItem.key("CSP_FCY_NET"),
@@ -45,7 +17,7 @@ comms = ac.OnlineEvent({
     req = ac.StructItem.boolean()
 }, function(sender, message)
     if message.req then
-        if FCY and isDirector() then
+        if FCY then
             comms({ fcy = true, timer = 0, req = false })
         end
         return
@@ -70,13 +42,12 @@ comms = ac.OnlineEvent({
     end
 end, ac.SharedNamespace.Track)
 
--- Interface gráfica desenhada diretamente na tela
+-- Renderizacao da janela solida
 function script.drawUI()
-    if not isDirector() or not showUI then return end
+    if not showUI then return end
 
-    ui.beginTransparentWindow("FCY_Admin", vec2(40, 120), vec2(250, 150))
-    ui.text("Direção de Prova - FCY")
-    ui.separator()
+    -- Janela solida com barra de titulo e fundo visivel
+    ui.beginWindow("FCY - Direção de Prova", vec2(40, 120), vec2(270, 160))
 
     tempoSlider = ui.slider("##time", tempoSlider, 0, 10, "Contagem: %.0f s")
 
@@ -85,7 +56,7 @@ function script.drawUI()
         local novo = not FCY
         local t = novo and math.floor(tempoSlider) or 0
 
-        -- Aplica localmente na máquina do diretor de imediato
+        -- Aplica localmente de imediato
         FCY = novo
         if novo then
             countdownTimer = t
@@ -101,29 +72,29 @@ function script.drawUI()
             ac.setMessage("DIREÇÃO DE PROVA", "PISTA LIBERADA - BANDEIRA VERDE", nil, 4)
         end
 
-        -- Transmite a ordem pela rede para todos os outros pilotos
+        -- Sincroniza com todo o grid
         comms({ fcy = novo, timer = t, req = false })
     end
 
-    ui.dummy(vec2(0, 3))
+    ui.dummy(vec2(0, 4))
     if FCY then
-        ui.textColored("STATUS: FCY ATIVO (MAX 80 KM/H)", rgbm(1, 0.8, 0, 1))
+        ui.textColored("STATUS: FCY ATIVO (80 KM/H)", rgbm(1, 0.8, 0, 1))
     elseif countdownTimer > 0 then
-        ui.textColored(string.format("STATUS: FCY EM %d s...", countdownTimer), rgbm(1, 0.5, 0, 1))
+        ui.textColored(string.format("STATUS: EM %d s...", countdownTimer), rgbm(1, 0.5, 0, 1))
     else
-        ui.textColored("STATUS: BANDEIRA VERDE", rgbm(0, 1, 0, 1))
+        ui.textColored("STATUS: PISTA VERDE", rgbm(0, 1, 0, 1))
     end
 
-    ui.endTransparentWindow()
+    ui.endWindow()
 end
 
 function script.update(dt)
-    -- Alterna exibição do painel apertando F8 no teclado
+    -- Tecla F8 alterna exibicao da janela
     if ui.keyboardButtonDown(ui.Key.F8) then
         showUI = not showUI
     end
 
-    -- Gerenciador da contagem regressiva
+    -- Contagem regressiva
     if countdownTimer > 0 then
         secondTracker = secondTracker + dt
         if secondTracker >= 1.0 then
@@ -140,7 +111,7 @@ function script.update(dt)
         end
     end
 
-    -- Regras físicas ativas durante o FCY
+    -- Regras fisicas aplicadas em todos os clientes conectados
     if FCY then
         physics.overrideRacingFlag(ac.FlagType.Caution)
         ac.setTurningLights(ac.TurningLights.Hazards)
@@ -159,5 +130,4 @@ function script.update(dt)
     end
 end
 
--- Sincronização inicial
 comms({ req = true })
